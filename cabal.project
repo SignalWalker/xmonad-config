@@ -1,0 +1,1 @@
+packages: xmonad-ash.cabal, */*.cabal

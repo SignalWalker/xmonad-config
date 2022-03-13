@@ -1,0 +1,47 @@
+cabal-version:      2.4
+name:               xmonad-ash
+version:            0.1.0.0
+
+license: NONE
+author: Ash Walker
+maintainer: ashurstwalker@gmail.com
+
+library
+  exposed-modules:
+    Lib,
+    Lib.Conversion,
+    Lib.Actions,
+    Lib.Actions.Pipes,
+    Hooks,
+    Hooks.Layouts,
+    Overlays,
+    Overlays.Base,
+    Overlays.Keymap,
+    Overlays.Scratch
+  hs-source-dirs: src
+  build-depends:
+    base,
+    xmonad,
+    xmonad-contrib,
+    X11,
+    directory>=1.3.7,
+    text,
+    containers,
+    unix,
+    process>=1.6.14,
+    pipes
+  default-language: Haskell2010
+
+executable xmonad-x86_64-linux
+  main-is: Main.hs
+  hs-source-dirs: app
+  build-depends:
+    base,
+    xmonad-ash,
+    xmonad,
+    xmonad-contrib,
+    X11,
+    process>=1.6.14,
+    text
+  ghc-options: -threaded
+  default-language: Haskell2010

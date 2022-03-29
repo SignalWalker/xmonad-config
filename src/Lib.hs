@@ -3,23 +3,23 @@
 
 module Lib
   ( Workspaces,
-    logDir,
-    getLogFile,
-    openLog,
-    writeLog,
-    appendLog,
-    readLog,
-    readWriteLog,
-    mainLogFile,
-    envLogFile,
+    getXDG,
+    getXState,
+    getXConfig,
+    getXData,
+    getXCache,
+    ensureDir,
+    ensureXDG,
+    ensureXConfig,
   )
 where
 
+import Data.Functor (($>))
 import Data.String (IsString)
 import Data.Text (Text)
 import qualified Data.Text as T
 import GHC.IO.Handle (Handle)
-import Lib.Actions (sh, (./))
+import Lib.Actions (sh)
 import Lib.Actions.Pipes ((&>))
 import qualified System.Directory as Dir
 import qualified System.Environment as Env
@@ -28,31 +28,26 @@ import System.Process (createProcess)
 
 type Workspaces = [String]
 
-logDir :: IO FilePath
-logDir = Dir.getXdgDirectory Dir.XdgState "xmonad" >>= Dir.createDirectoryIfMissing True *> return
+ensureDir :: FilePath -> IO FilePath
+ensureDir path = Dir.createDirectoryIfMissing True path $> path
 
-getLogFile :: String -> IO FilePath
-getLogFile name = logDir >>= \ld -> return $ ld <> "/" <> name
+getXDG :: Dir.XdgDirectory -> Text -> IO FilePath
+getXDG dir name = Dir.getXdgDirectory dir $ T.unpack name
 
-openLog :: String -> IOMode -> IO Handle
-openLog name mode = do
-  path <- getLogFile name
-  openFile path mode
+ensureXDG :: Dir.XdgDirectory -> Text -> IO FilePath
+ensureXDG dir name = getXDG dir name >>= ensureDir
 
-writeLog :: String -> IO Handle
-writeLog name = openLog name WriteMode
+getXState :: Text -> IO FilePath
+getXState name = Dir.getXdgDirectory Dir.XdgState (T.unpack name)
 
-appendLog :: String -> IO Handle
-appendLog name = openLog name AppendMode
+getXConfig :: Text -> IO FilePath
+getXConfig name = Dir.getXdgDirectory Dir.XdgConfig (T.unpack name)
 
-readLog :: String -> IO Handle
-readLog name = openLog name ReadMode
+ensureXConfig :: Text -> IO FilePath
+ensureXConfig name = getXConfig name >>= ensureDir
 
-readWriteLog :: String -> IO Handle
-readWriteLog name = openLog name ReadWriteMode
+getXData :: Text -> IO FilePath
+getXData name = Dir.getXdgDirectory Dir.XdgData (T.unpack name)
 
-mainLogFile :: IO FilePath
-mainLogFile = getLogFile "main.log"
-
-envLogFile :: Text -> Text
-envLogFile name = "${XDG_STATE_HOME:-$HOME/.local/state}/" <> name <> ".log"
+getXCache :: Text -> IO FilePath
+getXCache name = Dir.getXdgDirectory Dir.XdgCache (T.unpack name)

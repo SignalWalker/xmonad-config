@@ -15,9 +15,9 @@ module Lib.Actions
   ( Shell,
     Command,
     ProcessState,
-    createProc,
-    createCmd,
-    (./),
+    CmdRunner (createCmd, (./)),
+    Runnable (runProc),
+    (>$),
     sh,
     zsh,
     fish,
@@ -35,51 +35,57 @@ import Lib.Conversion (From, Into (into), from)
 import System.Posix (ProcessID)
 import System.Posix.Process (executeFile)
 import System.Posix.Types (ProcessID)
-import System.Process (CreateProcess (std_err, std_out), ProcessHandle, createProcess)
+import System.Process (CmdSpec (RawCommand, ShellCommand), CreateProcess (std_err, std_out), ProcessHandle, createProcess)
 import qualified System.Process as Proc
 import XMonad (MonadIO, X, spawn)
 import qualified XMonad as XM
 
 type Command = (Text, Bool)
 
--- type Shell = Command
-
--- type ShScript = (Shell, Text)
-
-instance From Command Text where
-  from (path, env) = (if env then "/usr/bin/env " else "") <> path
-
 type ProcessState = (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 
-instance (MonadIO m) => From CreateProcess (m ProcessState) where
-  from proc = liftIO $ createProcess proc
+class CmdRunner rnr args where
+  createCmd :: rnr -> args -> CreateProcess
+  (./) :: rnr -> args -> CreateProcess
+  rn ./ arg = createCmd rn arg
 
-instance (MonadIO m, From f (m ProcessState)) => From (IO f) (m ProcessState) where
-  from fIO = (from :: f -> m ProcessState) =<< liftIO fIO
+instance CmdRunner String [String] where
+  createCmd = Proc.proc
 
-createProc :: Text -> [Text] -> CreateProcess
-createProc exe args = Proc.proc (T.unpack exe) (T.unpack <$> args)
+instance CmdRunner String String where
+  createCmd exe args = createCmd exe [args]
 
--- createShell ::  txt -> txt -> CreateProcess
--- createShell shell cmd = createProc shell ["-c", cmd]
+instance CmdRunner Text [Text] where
+  createCmd exe args = createCmd (T.unpack exe) (T.unpack <$> args)
 
-type Shell txt = (txt, [txt], Bool)
+instance CmdRunner Text Text where
+  createCmd exe cmd = createCmd exe [cmd]
 
-createCmd :: Shell Text -> Text -> CreateProcess
-createCmd (sh, args, False) cmd = createProc sh $ args <> [cmd]
-createCmd (sh, args, True) cmd = createCmd ("/usr/bin/env " <> sh, args, False) cmd
+type Shell txt = (txt, [txt])
 
-(./) :: Shell Text -> Text -> CreateProcess
-s ./ c = createCmd s c
+instance CmdRunner (Shell Text) String where
+  createCmd (sh, shArgs) args = createCmd (T.unpack sh) $ (T.unpack <$> shArgs) <> [args]
+
+instance CmdRunner (Shell Text) Text where
+  createCmd (sh, shArgs) args = createCmd sh $ shArgs <> [args]
+
+(exe :: Text) >$ (args :: [Text]) = createCmd exe args
 
 sh :: Shell Text
-sh = ("sh", ["-c"], False)
+sh = ("sh", ["-c"])
 
 zsh :: Shell Text
-zsh = ("zsh", ["-c"], True)
+zsh = ("zsh", ["-c"])
 
 fish :: Shell Text
-fish = ("fish", ["-c"], True)
+fish = ("fish", ["-c"])
 
 nu :: Shell Text
-nu = ("nu", ["-c"], True)
+nu = ("nu", ["-c"])
+
+class Runnable rn where
+  runProc :: rn -> CreateProcess
+
+instance Runnable CmdSpec where
+  runProc (ShellCommand cmd) = sh ./ cmd
+  runProc (RawCommand path args) = createCmd path args

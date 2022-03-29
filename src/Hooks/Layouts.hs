@@ -1,15 +1,16 @@
 module Hooks.Layouts
-  ( hook
+  ( hook,
   )
 where
 
-import qualified XMonad as XM
 import XMonad ((|||))
+import qualified XMonad as XM
+import qualified XMonad.Layout.Minimize as Min
+import qualified XMonad.Layout.NoBorders as NB
 
-
-hook = tiled ||| XM.Mirror tiled ||| XM.Full
+hook = Min.minimize (tiled ||| XM.Mirror tiled ||| NB.noBorders XM.Full)
   where
-    tiled = XM.Tall nmain delta ratio
+    tiled = NB.smartBorders $ XM.Tall nmain delta ratio
     nmain = 1 -- Default number of windows in the main pane
     ratio = 1 / 2 -- Default proportion of screen occupied by main pane
-    delta = 3 / 100 -- Percent of screen to increment by when resizing panes
+    delta = 2 / 100 -- Percent of screen to increment by when resizing panes

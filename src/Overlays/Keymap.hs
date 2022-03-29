@@ -85,7 +85,7 @@ keyMap conf@(XM.XConfig {XM.modMask = sysM, XM.terminal = term}) =
                -- general
                ((sysM, xK_Return), spawn $ XM.terminal conf),
                ((sysM, xK_d), unGrab *> spawn "rofi -show drun"),
-               ((appM, xK_q), XM.withFocused $ XM.killWindow), -- kill individual window (or whole app, if former not supported)
+               ((appM, xK_q), XM.withFocused XM.killWindow), -- kill individual window (or whole app, if former not supported)
                ((appM .|. altM, xK_q), XM.kill), -- kill whole app
                -- display
                ((0, xK_Print), unGrab *> spawn (maim [])),

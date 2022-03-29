@@ -4,16 +4,19 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 import Control.Monad (void)
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Data.String (IsString (fromString))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Graphics.X11.ExtraTypes.XF86
 import qualified Hooks as H
-import Lib (Workspaces, envLogFile, getLogFile, logDir, mainLogFile, writeLog)
-import Lib.Actions (ProcessState, createProc, sh, (./))
+import Lib (ensureXConfig, getXConfig)
+import Lib.Actions (ProcessState, fish, sh, zsh, (./), (>$))
 import Lib.Actions.Pipes (Pipe, (&>))
 import qualified Overlays as O
 import qualified Overlays.Keymap as K
 import qualified Overlays.Scratch as S
+import qualified System.Directory as Dir
 import System.IO (IOMode (WriteMode))
 import System.Process (createProcess, shell)
 import XMonad (focusFollowsMouse, keys, layoutHook, manageHook, modMask, startupHook, terminal, workspaces, xmonad, (<+>))
@@ -25,39 +28,52 @@ import qualified XMonad.Hooks.StatusBar as SB
 import qualified XMonad.Hooks.StatusBar.PP as PP
 import qualified XMonad.Hooks.UrgencyHook as UH
 import qualified XMonad.Util.Cursor as CU
+import qualified XMonad.Util.NamedScratchpad as NS
 import qualified XMonad.Util.WorkspaceCompare as WS
 
 -- import qualified System.Log.Simple as Log
 
-mkCfg logFile =
+cfg =
   XM.def
     { terminal = "kitty",
       focusFollowsMouse = False,
       modMask = XM.mod3Mask,
-      workspaces = map show ([1 .. 9] <> [0]) <> ["NSP"],
+      workspaces = map show ([1 .. 9] <> [0]) <> [NS.scratchpadWorkspaceTag],
       keys = S.keyMap <+> K.keyMap,
-      layoutHook = DO.avoidStruts H.layout,
-      startupHook =
-        mconcat $
-          CU.setDefaultCursor CU.xC_left_ptr :
-          ( void . XM.xfork . void
-              <$> [ ((sh ./ "date && ${XDG_CONFIG_HOME:-$HOME/.config}/polybar/launch.sh") &> writeLog "polybar.log") >>= createProcess,
-                    ((sh ./ "date && feh --force-aliasing --bg-fill --recursive --randomize $HOME/pictures/backgrounds") &> writeLog "feh.log") >>= createProcess
-                  ]
-          ),
+      layoutHook = H.layout,
+      startupHook = do
+        liftIO $ putStrLn "startup hook..."
+        CU.setDefaultCursor CU.xC_left_ptr
+        autostartDir <- liftIO $ ensureXConfig "autostart"
+        liftIO $ createProcess $ "dex" >$ ["-as", fromString autostartDir]
+        liftIO $ createProcess $ sh ./ ("feh --force-aliasing --bg-fill --recursive --randomize $(xdg-user-dir PICTURES)/backgrounds" :: Text)
+        liftIO $ putStrLn "startup complete",
       manageHook = H.manage <+> S.manage
     }
 
 main :: IO ()
-main = do
-  logFile <- mainLogFile
-  let cfg = mkCfg logFile
+main =
   xmonad
+    . UH.withUrgencyHook UH.NoUrgencyHook
     . Ewmh.setEwmhActivateHook UH.doAskUrgent
     . Ewmh.addEwmhWorkspaceSort (pure $ WS.filterOutWs ["NSP"])
     . Ewmh.ewmhFullscreen
     . Ewmh.ewmh
-    . DL.xmobarProp
-    . UH.withUrgencyHook UH.NoUrgencyHook
+    . SB.dynamicEasySBs statusBar
     . K.navi (XM.modMask cfg)
     $ cfg
+  where
+    pcfgIO = getXConfig "polybar/config.ini"
+    polybar :: FilePath -> XM.ScreenId -> String -> String
+    polybar cfg (XM.S scr) bar =
+      mconcat ["systemd-cat --identifier='polybar::", show scr, "' env MONITOR=$(polybar -m | sed -n '", show (scr + 1), "{s/:.*$//g;p;q}') polybar -cr ", cfg, " ", bar, " & disown"]
+    statusBar' :: XM.ScreenId -> String -> IO SB.StatusBarConfig
+    statusBar' scr@(XM.S scrn) bar = do
+      pcfg <- pcfgIO
+      putStrLn $ mconcat ["polybar :: ", pcfg, " :: scr ", show scrn, " : bar ", bar]
+      let cmd = polybar pcfg scr bar
+      putStrLn $ mconcat ["    cmd: " <> cmd]
+      return $ SB.statusBarGeneric cmd mempty
+    statusBar :: XM.ScreenId -> IO SB.StatusBarConfig
+    statusBar 0 = statusBar' 0 "main"
+    statusBar scr = statusBar' scr "secondary"

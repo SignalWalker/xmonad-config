@@ -1,42 +1,58 @@
 {
   inputs = {
-    flake-utils.url = github:numtide/flake-utils;
     nixpkgs.url = github:nixos/nixpkgs/nixpkgs-unstable;
-    git-ignore-nix.url = github:hercules-ci/gitignore.nix/master;
-    xmonad = github:xmonad/xmonad;
-    xmonad-contrib = {
-      url = path:./xmonad-contrib;
+    xmonad = {
+      url = github:xmonad/xmonad;
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    xmonad-contrib = {
+      url = github:signalwalker/xmonad-contrib/ash;
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.xmonad.follows = "xmonad";
+    };
   };
-  outputs = { self, flake-utils, nixpkgs, git-ignore-nix, xmonad, xmonad-contrib }:
+  outputs = { self, nixpkgs, xmonad, xmonad-contrib }:
     let
-      pname = "xmonad-ash";
-      overlay = final: prev: {
-        haskellPackages = prev.haskellPackages.override (old: {
-          overrides = prev.lib.composeExtensions (old.overrides or (_: _: { }))
-            (hself: hsuper: {
-              ${pname} =
-                hself.callCabal2nix pname (git-ignore-nix.lib.gitignoreSource ./.) { };
-            });
-        });
+      std = nixpkgs.lib;
+      derivations = {
+        "x86_64-linux" = {
+          haskellPackages = final: prev: prev.haskellPackages.override {
+            overrides = hfinal: hprev: {
+              # xmonad = (xmonad.overlay hfinal hprev).haskellPackages.xmonad;
+              # xmonad-contrib = (xmonad-contrib.overlay hfinal hprev).haskellPackages.xmonad-contrib;
+              process = hprev.callHackageDirect
+                {
+                  pkg = "process";
+                  ver = "1.6.14.0";
+                  sha256 = "REpymPsVz7EMCWbSYzqGb+wr0IpcvCzcdjio/a0gFzU=";
+                }
+                { };
+              directory = hprev.callHackageDirect
+                {
+                  pkg = "directory";
+                  ver = "1.3.7.0";
+                  sha256 = "GoqLXqGGYHAMAQrt3B8YOI2t9EhbCjobxA9imI0N84E=";
+                }
+                { };
+              xmonad-ash = hprev.callCabal2nix "xmonad-ash" (./.) { };
+            };
+          };
+        };
       };
-      overlays = xmonad.overlays ++ xmonad-contrib.overlays ++ [ overlay ];
+      mapDrvs = fn: std.mapAttrs fn derivations;
     in
-    flake-utils.lib.eachDefaultSystem
-      (system:
+    {
+      overlays = mapDrvs
+        (system: pkgs:
+          final: prev: ((std.mapAttrs (name: drv: drv final prev) pkgs))
+        );
+      packages = mapDrvs (system: drvs:
         let
-          pkgs = import nixpkgs { inherit system overlays; };
-          modifyDevShell =
-            if builtins.pathExists ./develop.nix
-            then import ./develop.nix
-            else _: x: x;
+          pkgs = import nixpkgs { inherit system; overlays = [ self.overlays.${system} ] ++ xmonad-contrib.overlays; };
         in
-        rec {
-          devShell = pkgs.haskellPackages.shellFor (modifyDevShell pkgs {
-            packages = p: [ p.${pname} ];
-            nativeBuildInputs = [ pkgs.cabal-install ];
-          });
-          defaultPackage = pkgs.haskellPackages.${pname};
-        }) // { inherit overlay overlays; };
+        (std.mapAttrs (name: drv: pkgs.${name}) drvs) // {
+          default = pkgs.haskellPackages.xmonad-ash;
+        });
+      homeManagerModules = { xmonad-ash = import ./home-manager.nix; };
+    };
 }

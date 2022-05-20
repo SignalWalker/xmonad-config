@@ -29,7 +29,6 @@ library
     containers>=0.6,
     unix,
     process>=1.6.14,
-    HList>=0.5,
     pipes
   default-language: Haskell2010
 

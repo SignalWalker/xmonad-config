@@ -23,12 +23,13 @@ import Data.String (IsString (fromString))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Foreign.C (CUInt)
+import GHC.Exception (Exception (displayException))
 import Graphics.X11
 import qualified Graphics.X11 as X
 import Graphics.X11.ExtraTypes
-import Lib (ensureXDG)
+import Lib (ensureXDG, getXDG, getXDGUser, getXDGUser', getXDGUserOr)
 import Lib.Actions (CmdRunner (createCmd, (./)), ProcessState, sh, zsh, (>$))
-import Lib.Actions.Pipes (Pipe ((|>)), syscat, writeNull, (&>))
+import Lib.Actions.Pipes (Forkable (fork), MuxPipe, Pipe ((|>)), Processable (process), syscat, writeNull, (|&>), (||>))
 import Overlays.Base ((<//))
 import qualified Overlays.Base as O
 import qualified System.Directory as Dir
@@ -69,7 +70,7 @@ progSimpleA :: Text -> Program
 progSimpleA cmd = progWithName cmd $ cmd >$ []
 
 progTerm :: Text -> [Text] -> Program
-progTerm name termArgs = (name, "kitty" >$ (["--class", name] <> termArgs), H.appName =? T.unpack name <&&> H.className =? T.unpack name)
+progTerm name termArgs = (name, "kitty" >$ (["--name", "kitty", "--class", name] <> termArgs), H.appName =? "kitty" <&&> H.className =? T.unpack name)
 
 editCmd name args = "neovide" >$ (["--multigrid", "--x11-wm-class", name] <> args)
 
@@ -100,21 +101,21 @@ brsXApp Qute = "qutebrowser"
 
 instance CmdRunner Browser (Text, Text, Maybe Text) where
   createCmd Firefox (instDir, inst, url) =
-    ("firefox-nightly" :: Text)
+    ("firefox" :: Text)
       ./ (["-P", inst, "--new-instance", "--class=" <> inst] <> maybeToList url)
   createCmd Qute (instDir, inst, url) =
     ("qutebrowser" :: Text)
       ./ (["--basedir", instDir, "--qt-arg", "class", inst] <> maybeToList url)
 
 instance CmdRunner Browser (Text, Maybe Text) where
-  createCmd Firefox (inst, url) = ("firefox-nightly" :: Text) ./ (["-P", inst, "--new-instance", "--class=" <> inst] <> maybeToList url)
+  createCmd Firefox (inst, url) = ("firefox" :: Text) ./ (["-P", inst, "--new-instance", "--class=" <> inst] <> maybeToList url)
   createCmd Qute (inst, url) = zsh ./ mconcat ["qutebrowser --basedir ${XDG_STATE_HOME:-$HOME/.local/state}/", inst, " --qt-arg class ", inst, maybe "" (" " <>) url]
 
 instance CmdRunner Browser Text where
-  createCmd Firefox url = ("firefox-nightly" :: Text) ./ url
+  createCmd Firefox url = ("firefox" :: Text) ./ url
   createCmd Qute url = ("qutebrowser" :: Text) ./ url
 
-progSSB :: Browser -> Text -> Maybe Text -> ProgramIO
+progSSB :: Browser -> Text -> Maybe Text -> ProgramM (IO CreateProcess)
 progSSB brs inst url =
   ( inst,
     do
@@ -144,29 +145,11 @@ class ToScratchpad sp where
 instance ToScratchpad S.NamedScratchpad where
   toSP = id
 
-runProg :: Text -> CreateProcess -> IO [ProcessState]
-runProg name proc = do
-  (procs :: [CreateProcess]) <- (proc, std_out proc == Inherit, std_err proc == Inherit) |> syscat name
-  sequence $
-    ( \procDef -> do
-        putStrLn $ "createProg: " <> show (cmdspec procDef)
-        createProcess procDef
-    )
-      <$> procs
-
-instance (ToManageHook tmh) => ToScratchpad (Text, ProgramM (IO CreateProcess), tmh) where
-  toSP (name, (pName, procIO :: IO CreateProcess, query), hook) =
+instance (Forkable f, ToManageHook tmh) => ToScratchpad (Text, ProgramM f, tmh) where
+  toSP (name, (pName, procDef :: f, query), hook) =
     S.NS
       (T.unpack name)
-      (liftIO . void $ runProg name =<< procIO)
-      query
-      (toManageHook hook)
-
-instance (ToManageHook tmh) => ToScratchpad (Text, ProgramM CreateProcess, tmh) where
-  toSP (name, (pName, procDef :: CreateProcess, query), hook) =
-    S.NS
-      (T.unpack name)
-      (liftIO . void $ runProg name procDef)
+      (fork procDef)
       query
       (toManageHook hook)
 
@@ -190,11 +173,6 @@ instance (ToManageHook tmh, ToScratchpad (Text, ProgramM m, tmh)) => ToScratchpa
 
 instance (ToScratchpad (Text, ProgramM m, Rational)) => ToScratchpad (ProgramM m) where
   toSP prog@(name, _, _) = toSP (name, prog, spBig)
-
-data IntoScratchpad = forall a. ToScratchpad a => IntoScratchpad a
-
-instance ToScratchpad IntoScratchpad where
-  toSP (IntoScratchpad sp) = toSP sp
 
 type KeyBind = (X.ButtonMask, X.KeySym)
 
@@ -229,17 +207,16 @@ pads =
     .:. (progCmd "scratch_update" upgradeCmd Hold, xK_u)
     .:. (progShll ["btop"], xK_t)
     .:. ((progTerm "scratch_logs" ["journalctl", "-fe"], spMsg), \sysM -> (sysM .|. altM, xK_grave))
-    .:. (progSSB Qute "activitywatch" $ Just "http://localhost:5600/#/home", \sysM -> (sysM .|. X.mod1Mask, xF86XK_Calculator))
+    -- .:. (progSSB Qute "activitywatch" $ Just "http://localhost:5600/#/home", \sysM -> (sysM .|. X.mod1Mask, xF86XK_Calculator))
     .:. ((progSimpleA "blueman-manager", spSmall), xK_b)
+    .:. (progSimpleA "dolphin", xK_slash)
     -- editors
     .:. (progEdit "edit_main" [], (sysMI, xK_e))
-    .:. ( progEditIO "edit_notes" $ (: []) <$> getProjectPath "notes/main.norg",
-          xK_n
-        )
-    .:. (progEditIO "edit_dot" $ Dir.getHomeDirectory >>= (\home -> return [home <> "/dotfiles/README.md"]) . fromString, xK_c)
-    .:. (progEditIO "edit_xmonad" $ Dir.getXdgDirectory Dir.XdgConfig "xmonad" >>= (\xmcfg -> return [xmcfg <> "/app/Main.hs"]) . fromString, xK_x)
+    .:. (progEditIO "edit_notes" $ (: []) <$> getNotePath "main.norg", xK_n)
+    .:. (progEditIO "edit_dot" $ (: []) <$> getProjectPath "nix/home/flake.nix", xK_c)
+    .:. (progEditIO "edit_xmonad" $ (: []) <$> getProjectPath "system/xmonad/flake.nix", xK_x)
     -- IM
-    .:. (progWithName "discord" ((writeNull >>= \null -> return $ "discord-canary" >$ [] &> null) :: IO CreateProcess), xK_d)
+    .:. (progWithName "discord" ((writeNull >>= \null -> return $ "discordcanary" >$ [] |&> null) :: IO CreateProcess), xK_d)
     .:. (progWithName "element" $ "element-desktop" >$ [], xK_m)
     .:. (progSimpleA "slack", xK_o)
     .:. (progTerm "scratch_irc" ["weechat"], xK_i)
@@ -248,10 +225,10 @@ pads =
     .:. ((progSimpleA "kdeconnect-app", spSmall), (ctrlM .|. altM, xF86XK_Calculator))
     .:. ((progWithName "scrcpy" $ "scrcpy" >$ ["--power-off-on-close", "-SKd"], S.defaultFloating), \sysM -> (sysM .|. ctrlM, xF86XK_Calculator))
     -- internet
-    .:. (progSimpleC "firefox-nightly", xK_f)
+    .:. (progSSB Firefox "main" Nothing, xK_f)
     .:. (progSimpleC "thunderbird-nightly", xK_e)
     -- media
-    .:. (progSSB Firefox "scratch_media" Nothing, xK_y)
+    .:. (progSSB Firefox "media" Nothing, xK_y)
     .:. ((progWithName "io.github.quodlibet.QuodLibet" $ "quodlibet" >$ [], spSmall), xK_w)
     .:. ((progSimpleA "pavucontrol", spSmall), xK_v)
     .:. (progSimpleA "qpwgraph", ((shiftM .|. ctrlM .|.), xK_v))
@@ -276,9 +253,13 @@ pads =
     xmRecompileCmd = ["sh", "-c", "xmonad --recompile && xmonad --restart && notify-send 'XMonad restarted'"]
     upgradeCmd = ["sh", "-c", "sudo nix profile upgrade .\\* && notify-send 'Root Nix updated' && nix profile upgrade .\\* && notify-send 'User Nix updated; beginning yay -Syu' && yay -Syu && notify-send 'Update Complete'"]
     getProjectPath :: Text -> IO Text
-    getProjectPath path = do
+    getProjectPath path = (<> "/" <> path) <$> do
       home <- Dir.getHomeDirectory
-      (\pdir -> if path == "" then pdir else pdir <> "/" <> path) . fromString . fromMaybe home <$> lookupEnv "ASH_PROJECT_DIR"
+      getXDGUserOr "PROJECT" $ (<> "/projects") . fromString $ home
+    getNotePath :: Text -> IO Text
+    getNotePath path = (<> "/" <> path) <$> do
+      home <- Dir.getHomeDirectory
+      getXDGUserOr "NOTE" $ (<> "/notes") . fromString $ home
 
 padDefs :: [S.NamedScratchpad]
 padDefs = fst <$> pads

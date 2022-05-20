@@ -7,6 +7,7 @@ module Overlays.Keymap
   )
 where
 
+import Control.Monad (void)
 import Data.Function (on)
 import qualified Data.Map as Map
 import Data.Text (Text)
@@ -16,9 +17,11 @@ import qualified Graphics.X11 as X
 import Graphics.X11.ExtraTypes
 import Lib (Workspaces)
 import Lib.Actions
+import Lib.Actions.Pipes (Processable, forkT, (||>))
 import Overlays.Base (Mergeable, Overlay, Overlay', (<//))
 import System.Exit (exitSuccess)
-import XMonad (spawn, (.|.))
+import System.Process (CreateProcess)
+import XMonad (MonadIO (liftIO), spawn, (.|.))
 import qualified XMonad as XM
 import qualified XMonad.Actions.FloatKeys as FL
 import qualified XMonad.Actions.Navigation2D as Nav
@@ -84,12 +87,12 @@ keyMap conf@(XM.XConfig {XM.modMask = sysM, XM.terminal = term}) =
           ++ [ -- Applications
                -- general
                ((sysM, xK_Return), spawn $ XM.terminal conf),
-               ((sysM, xK_d), unGrab *> spawn "rofi -show drun"),
+               ((sysM, xK_d), unGrab *> forkT "rofi -show drun"),
                ((appM, xK_q), XM.withFocused XM.killWindow), -- kill individual window (or whole app, if former not supported)
                ((appM .|. altM, xK_q), XM.kill), -- kill whole app
                -- display
-               ((0, xK_Print), unGrab *> spawn (maim [])),
-               ((appM, xK_s), unGrab *> spawn (maim ["-us"])),
+               ((0, xK_Print), maim []),
+               ((appM, xK_s), maim ["-us"]),
                -- notifications
                ((sysM .|. altM, xK_n), spawn "dunstctl history-pop"),
                ((sysM, xK_n), spawn "dunstctl close")
@@ -106,4 +109,5 @@ keyMap conf@(XM.XConfig {XM.modMask = sysM, XM.terminal = term}) =
     a -|- b = a <> " | " <> b
     previewImgCmd = "timeout 3 feh --class img_preview -. -"
     xclipImgCmd = "xclip -sel clip -t image/png -f" -|- previewImgCmd
-    maim args = T.unpack $ (T.intercalate " " $ ["maim"] <> args) -|- xclipImgCmd
+    maim :: [Text] -> XM.X ()
+    maim args = unGrab *> forkT (T.intercalate " " $ ["maim"] <> args <> ["|", "xclip", "-sel", "clip", "-t", "image/png", "-f", "|", "timeout", "5", "feh", "--class", "img_preview"])

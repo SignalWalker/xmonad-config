@@ -17,6 +17,7 @@ module Lib.Actions
     ProcessState,
     CmdRunner (createCmd, (./)),
     Runnable (runProc),
+    ToCreateProcess (toCreateProcess),
     (>$),
     sh,
     zsh,
@@ -43,6 +44,15 @@ import qualified XMonad as XM
 type Command = (Text, Bool)
 
 type ProcessState = (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
+
+class ToCreateProcess d where
+  toCreateProcess :: d -> CreateProcess
+
+instance ToCreateProcess CreateProcess where
+  toCreateProcess = id
+
+instance (CmdRunner rnr args) => ToCreateProcess (rnr, args) where
+  toCreateProcess (r, a) = createCmd r a
 
 class CmdRunner rnr args where
   createCmd :: rnr -> args -> CreateProcess

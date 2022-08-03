@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Lib
   ( Workspaces,
@@ -30,6 +31,9 @@ import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import System.IO (IOMode (AppendMode, ReadMode, ReadWriteMode, WriteMode), openFile)
 import System.Process (createPipe, createProcess, readProcess)
+import System.Posix.Process (getProcessID)
+import qualified XMonad.Hooks.ManageHelpers as XM
+import XMonad (Query)
 
 type Workspaces = [String]
 

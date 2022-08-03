@@ -21,7 +21,7 @@ import Lib.Actions.Pipes (Processable, forkT, (||>))
 import Overlays.Base (Mergeable, Overlay, Overlay', (<//))
 import System.Exit (exitSuccess)
 import System.Process (CreateProcess)
-import XMonad (MonadIO (liftIO), spawn, (.|.))
+import XMonad (MonadIO (liftIO), spawn, windows, (.|.))
 import qualified XMonad as XM
 import qualified XMonad.Actions.FloatKeys as FL
 import qualified XMonad.Actions.Navigation2D as Nav
@@ -34,18 +34,27 @@ import XMonad.Util.Ungrab (unGrab)
 
 navi (sysM :: XM.ButtonMask) =
   Nav.navigation2D
-    Nav.def
+    ( Nav.Navigation2DConfig
+        { Nav.defaultTiledNavigation = Nav.hybridOf Nav.sideNavigation Nav.centerNavigation,
+          Nav.floatNavigation = Nav.hybridOf Nav.lineNavigation Nav.centerNavigation,
+          Nav.screenNavigation = Nav.hybridOf Nav.sideNavigation Nav.centerNavigation,
+          Nav.layoutNavigation = [("Full", Nav.centerNavigation)],
+          Nav.unmappedWindowRect = [("Full", Nav.singleWindowRect)]
+        }
+    )
     (xK_k, xK_h, xK_j, xK_l)
     [(sysM, Nav.windowGo), (sysM .|. shiftMask, Nav.windowSwap)]
     False
 
-toggleFloat win =
+toggleFloat' preserve win =
   XM.windows
     ( \stk ->
         if Map.member win (Stack.floating stk)
           then Stack.sink win stk
           else Stack.float win (Stack.RationalRect (1 / 16) (1 / 16) (7 / 8) (7 / 8)) stk
     )
+
+toggleFloat = toggleFloat' False
 
 keyMap :: XM.XConfig XM.Layout -> Map.Map (XM.ButtonMask, X.KeySym) (XM.X ())
 keyMap conf@(XM.XConfig {XM.modMask = sysM, XM.terminal = term}) =
@@ -63,10 +72,12 @@ keyMap conf@(XM.XConfig {XM.modMask = sysM, XM.terminal = term}) =
                ((sysM .|. shiftM, xK_space), XM.withFocused toggleFloat),
                ((xmM, xK_space), XM.sendMessage XM.NextLayout),
                ((xmM .|. ctrlM, xK_space), XM.setLayout $ XM.layoutHook conf), -- reset
-               ((xmM, xK_r), XM.refresh)
+               ((xmM, xK_r), XM.refresh),
+               ((xmM, xK_equal), XM.sendMessage XM.Expand),
+               ((xmM, xK_minus), XM.sendMessage XM.Shrink)
              ]
           ++ [ -- Display Control
-               ((xmM, xK_l), spawn "i3lock -e -i $HOME/pond_bg_black.png"),
+               ((xmM, xK_l), spawn "i3lock -e -i $(xdg-user-dir PICTURES)/lock_screen.png"),
                -- brightness
                ((0, xF86XK_MonBrightnessUp), spawn "light -A 5"),
                ((0, xF86XK_MonBrightnessDown), spawn "light -U 5"),
@@ -94,8 +105,8 @@ keyMap conf@(XM.XConfig {XM.modMask = sysM, XM.terminal = term}) =
                ((0, xK_Print), maim []),
                ((appM, xK_s), maim ["-us"]),
                -- notifications
-               ((sysM .|. altM, xK_n), spawn "dunstctl history-pop"),
-               ((sysM, xK_n), spawn "dunstctl close")
+               ((sysM .|. altM, xK_n), spawn "wired --show 1"),
+               ((sysM, xK_n), spawn "wired --drop latest")
                -- system
                -- ((xmM, xK_x), XM.withFocused )
              ]

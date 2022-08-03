@@ -229,7 +229,7 @@ pads =
     .:. (progSimpleC "thunderbird-nightly", xK_e)
     -- media
     .:. (progSSB Firefox "media" Nothing, xK_y)
-    .:. ((progWithName "io.github.quodlibet.QuodLibet" $ "quodlibet" >$ [], spSmall), xK_w)
+    .:. ((progSimpleA "cantata", spSmall), xK_w)
     .:. ((progSimpleA "pavucontrol", spSmall), xK_v)
     .:. (progSimpleA "qpwgraph", ((shiftM .|. ctrlM .|.), xK_v))
     -- util

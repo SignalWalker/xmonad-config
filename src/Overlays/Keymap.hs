@@ -82,7 +82,7 @@ keyMap conf@(XM.XConfig {XM.modMask = sysM, XM.terminal = term}) =
                ((0, xF86XK_MonBrightnessUp), spawn "light -A 5"),
                ((0, xF86XK_MonBrightnessDown), spawn "light -U 5"),
                ((ctrlM, xF86XK_MonBrightnessUp), spawn "light -S 100"),
-               ((ctrlM, xF86XK_MonBrightnessDown), spawn "light -S 100")
+               ((ctrlM, xF86XK_MonBrightnessDown), spawn "light -S 1")
              ]
           ++ [ -- Audio Control
                ((0, xF86XK_AudioPrev), spawn "playerctl -s previous"),
@@ -121,4 +121,4 @@ keyMap conf@(XM.XConfig {XM.modMask = sysM, XM.terminal = term}) =
     previewImgCmd = "timeout 3 feh --class img_preview -. -"
     xclipImgCmd = "xclip -sel clip -t image/png -f" -|- previewImgCmd
     maim :: [Text] -> XM.X ()
-    maim args = unGrab *> forkT (T.intercalate " " $ ["maim"] <> args <> ["|", "xclip", "-sel", "clip", "-t", "image/png", "-f", "|", "timeout", "5", "feh", "--class", "img_preview"])
+    maim args = unGrab *> forkT (T.intercalate " " $ ["maim"] <> args <> ["|", "xclip", "-sel", "clip", "-t", "image/png", "-f"])

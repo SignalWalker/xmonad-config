@@ -37,7 +37,7 @@ cfg =
   XM.def
     { terminal = "kitty",
       focusFollowsMouse = False,
-      modMask = XM.mod3Mask,
+      modMask = XM.mod4Mask,
       workspaces = map show ([1 .. 9] <> [0]) <> [NS.scratchpadWorkspaceTag],
       keys = S.keyMap <+> K.keyMap,
       layoutHook = H.layout,
@@ -66,7 +66,7 @@ main =
     . K.navi (XM.modMask cfg)
     $ cfg
   where
-    pcfgIO = getXConfig "polybar/config"
+    pcfgIO = getXConfig "polybar/config.ini"
     polybar :: FilePath -> XM.ScreenId -> String -> String
     polybar cfg (XM.S scr) bar =
       mconcat ["systemd-cat --identifier='polybar::", show scr, "' env MONITOR=$(polybar -m | sed -n '", show (scr + 1), "{s/:.*$//g;p;q}') polybar -cr ", cfg, " ", bar, " & disown"]
